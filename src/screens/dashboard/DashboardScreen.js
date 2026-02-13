@@ -38,7 +38,7 @@ export default function DashboardScreen() {
         try {
             // Fetch all complaints to calculate stats
             const response = await complaintService.getMyComplaints(null, 0, 1000);
-            const complaints = response.content || [];
+            const complaints = (response && response.content) ? response.content : [];
 
             const newStats = {
                 total: complaints.length,
@@ -101,31 +101,31 @@ export default function DashboardScreen() {
                 {/* Dashboard Tiles */}
                 <View style={styles.tilesContainer}>
                     <DashboardTile
-                        title="Total"
+                        title="All Complaints"
                         count={stats.total}
                         icon="clipboard-outline"
-                        color={COLORS.primary}
+                        color="#4F46E5" // Indigo-600 (Web primary)
                         onPress={() => handleTilePress(null, 'All Complaints')}
                     />
                     <DashboardTile
                         title="Pending"
                         count={stats.pending}
                         icon="time-outline"
-                        color={STATUS_COLORS.PENDING}
+                        color="#EAB308" // Yellow-500
                         onPress={() => handleTilePress(COMPLAINT_STATUS.PENDING, 'Pending')}
                     />
                     <DashboardTile
                         title="In Progress"
                         count={stats.inProgress}
                         icon="sync-outline"
-                        color={STATUS_COLORS.IN_PROGRESS}
+                        color="#9333EA" // Purple-600
                         onPress={() => handleTilePress(COMPLAINT_STATUS.IN_PROGRESS, 'In Progress')}
                     />
                     <DashboardTile
                         title="Resolved"
                         count={stats.resolved}
                         icon="checkmark-circle-outline"
-                        color={STATUS_COLORS.RESOLVED}
+                        color="#16A34A" // Green-600
                         onPress={() => handleTilePress(COMPLAINT_STATUS.RESOLVED, 'Resolved')}
                     />
                 </View>

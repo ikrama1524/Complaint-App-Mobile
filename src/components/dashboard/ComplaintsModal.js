@@ -33,14 +33,16 @@ export default function ComplaintsModal({ visible, onClose, status, statusLabel 
             const currentPage = reset ? 0 : page;
             const response = await complaintService.getMyComplaints(status, currentPage, 10);
 
+            const content = (response && response.content) ? response.content : [];
+
             if (reset) {
-                setComplaints(response.content || []);
+                setComplaints(content);
                 setPage(0);
             } else {
-                setComplaints([...complaints, ...(response.content || [])]);
+                setComplaints([...complaints, ...content]);
             }
 
-            setHasMore(!response.last);
+            setHasMore(response ? !response.last : false);
             setPage(currentPage + 1);
         } catch (error) {
             console.error('Failed to fetch complaints:', error);

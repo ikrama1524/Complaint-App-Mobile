@@ -21,6 +21,7 @@ export default function LoginScreen({ navigation }) {
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [role, setRole] = useState('citizen'); // 'citizen', 'admin', 'super-admin'
     const { login } = useAuth();
 
     const handleLogin = async () => {
@@ -30,11 +31,21 @@ export default function LoginScreen({ navigation }) {
         }
 
         setLoading(true);
-        const result = await login(identifier, password);
+        // Pass role to login function
+        const result = await login(identifier, password, role);
         setLoading(false);
 
         if (!result.success) {
             Alert.alert('Login Failed', result.error);
+        }
+    };
+
+    const getRoleLabel = (r) => {
+        switch (r) {
+            case 'citizen': return 'Citizen';
+            case 'admin': return 'Corporator';
+            case 'super-admin': return 'Super Admin';
+            default: return 'Citizen';
         }
     };
 
@@ -56,14 +67,29 @@ export default function LoginScreen({ navigation }) {
 
                 {/* Login Form */}
                 <View style={styles.formContainer}>
-                    <Text style={styles.formTitle}>Citizen Login</Text>
+                    {/* Role Tabs */}
+                    <View style={styles.tabContainer}>
+                        {['citizen', 'admin', 'super-admin'].map((r) => (
+                            <TouchableOpacity
+                                key={r}
+                                style={[styles.tab, role === r && styles.activeTab]}
+                                onPress={() => setRole(r)}
+                            >
+                                <Text style={[styles.tabText, role === r && styles.activeTabText]}>
+                                    {getRoleLabel(r)}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+
+                    <Text style={styles.formTitle}>{getRoleLabel(role)} Login</Text>
 
                     {/* Email/Mobile Input */}
                     <View style={styles.inputContainer}>
                         <Ionicons name="person-outline" size={20} color={COLORS.gray} style={styles.inputIcon} />
                         <TextInput
                             style={styles.input}
-                            placeholder="Email or Mobile Number"
+                            placeholder={role === 'citizen' ? "Email or Mobile Number" : "Email Address"}
                             value={identifier}
                             onChangeText={setIdentifier}
                             autoCapitalize="none"
@@ -103,13 +129,15 @@ export default function LoginScreen({ navigation }) {
                         )}
                     </TouchableOpacity>
 
-                    {/* Register Link */}
-                    <View style={styles.registerContainer}>
-                        <Text style={styles.registerText}>Don't have an account? </Text>
-                        <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-                            <Text style={styles.registerLink}>Register</Text>
-                        </TouchableOpacity>
-                    </View>
+                    {/* Register Link (Only for Citizens) */}
+                    {role === 'citizen' && (
+                        <View style={styles.registerContainer}>
+                            <Text style={styles.registerText}>Don't have an account? </Text>
+                            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+                                <Text style={styles.registerLink}>Register</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
                 </View>
             </ScrollView>
         </KeyboardAvoidingView>
@@ -154,6 +182,36 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: 30,
         borderTopRightRadius: 30,
         padding: 24,
+    },
+    tabContainer: {
+        flexDirection: 'row',
+        backgroundColor: COLORS.lightGray,
+        borderRadius: 12,
+        padding: 4,
+        marginBottom: 24,
+    },
+    tab: {
+        flex: 1,
+        paddingVertical: 10,
+        alignItems: 'center',
+        borderRadius: 10,
+    },
+    activeTab: {
+        backgroundColor: COLORS.white,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
+    },
+    tabText: {
+        fontSize: 14,
+        color: COLORS.gray,
+        fontWeight: '600',
+    },
+    activeTabText: {
+        color: COLORS.primary,
+        fontWeight: 'bold',
     },
     formTitle: {
         fontSize: 24,

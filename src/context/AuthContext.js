@@ -30,9 +30,16 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const login = async (identifier, password) => {
+    const login = async (identifier, password, role = 'citizen') => {
         try {
-            const authData = await authService.login(identifier, password);
+            let authData;
+            if (role === 'admin') {
+                authData = await authService.loginAdmin(identifier, password);
+            } else if (role === 'super-admin') {
+                authData = await authService.loginSuperAdmin(identifier, password);
+            } else {
+                authData = await authService.login(identifier, password);
+            }
 
             // Save token and user data
             await storage.saveToken(authData.token);

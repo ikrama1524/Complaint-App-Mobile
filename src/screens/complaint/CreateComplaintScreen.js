@@ -8,7 +8,9 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     Alert,
-    Image
+    Image,
+    KeyboardAvoidingView,
+    Platform
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +20,7 @@ import MapView, { Marker } from 'react-native-maps';
 import { Picker } from '@react-native-picker/picker';
 import { complaintService } from '../../api/complaintService';
 import { COLORS, COMPLAINT_TYPES, DEFAULT_LOCATION } from '../../utils/constants';
+import Toast from '../../components/common/Toast';
 
 export default function CreateComplaintScreen({ navigation }) {
     const [formData, setFormData] = useState({
@@ -32,9 +35,23 @@ export default function CreateComplaintScreen({ navigation }) {
     const [loading, setLoading] = useState(false);
     const [locationLoading, setLocationLoading] = useState(false);
 
+    // Toast State
+    const [toast, setToast] = useState({
+        visible: false,
+        message: '',
+        type: 'success'
+    });
+
     useEffect(() => {
         requestPermissions();
     }, []);
+
+    const showToast = (message, type = 'success') => {
+        setToast({ visible: true, message, type });
+        setTimeout(() => {
+            setToast(prev => ({ ...prev, visible: false }));
+        }, 3000);
+    };
 
     const requestPermissions = async () => {
         const { status: locationStatus } = await Location.requestForegroundPermissionsAsync();
@@ -50,30 +67,51 @@ export default function CreateComplaintScreen({ navigation }) {
         try {
             const location = await Location.getCurrentPositionAsync({});
             const { latitude, longitude } = location.coords;
-
-            setFormData(prev => ({
-                ...prev,
-                latitude,
-                longitude
-            }));
-
-            // Reverse geocode to get address
-            const addresses = await Location.reverseGeocodeAsync({ latitude, longitude });
-            if (addresses.length > 0) {
-                const address = addresses[0];
-                const locationText = `${address.street || ''}, ${address.city || ''}, ${address.region || ''}`.trim();
-                setFormData(prev => ({ ...prev, locationText }));
-            }
+            updateLocation(latitude, longitude);
         } catch (error) {
             console.error('Failed to get location:', error);
+            showToast('Failed to get current location', 'error');
         } finally {
             setLocationLoading(false);
         }
     };
 
+    const updateLocation = async (latitude, longitude) => {
+        setFormData(prev => ({
+            ...prev,
+            latitude,
+            longitude
+        }));
+
+        try {
+            const addresses = await Location.reverseGeocodeAsync({ latitude, longitude });
+            if (addresses.length > 0) {
+                const address = addresses[0];
+                const parts = [
+                    address.name,
+                    address.street,
+                    address.district,
+                    address.city,
+                    address.region,
+                    address.postalCode
+                ].filter(Boolean);
+
+                const locationText = parts.join(', ');
+                setFormData(prev => ({ ...prev, locationText }));
+            }
+        } catch (error) {
+            console.log('Reverse geocoding error', error);
+        }
+    };
+
+    const handleMapPress = (e) => {
+        const { latitude, longitude } = e.nativeEvent.coordinate;
+        updateLocation(latitude, longitude);
+    };
+
     const pickImage = async () => {
         if (images.length >= 3) {
-            Alert.alert('Limit Reached', 'You can upload maximum 3 images');
+            showToast('You can upload maximum 3 images', 'error');
             return;
         }
 
@@ -99,7 +137,7 @@ export default function CreateComplaintScreen({ navigation }) {
 
     const handleSubmit = async () => {
         if (!formData.title || !formData.description) {
-            Alert.alert('Error', 'Please fill in title and description');
+            showToast('Please fill in title and description', 'error');
             return;
         }
 
@@ -114,28 +152,28 @@ export default function CreateComplaintScreen({ navigation }) {
                 locationText: formData.locationText || `${formData.latitude}, ${formData.longitude}`
             };
 
-            await complaintService.createComplaint(complaintData, images);
+            const response = await complaintService.createComplaint(complaintData, images);
+            const successMsg = response?.message || 'Complaint submitted successfully!';
 
-            Alert.alert('Success', 'Complaint submitted successfully', [
-                {
-                    text: 'OK', onPress: () => {
-                        // Reset form
-                        setFormData({
-                            title: '',
-                            description: '',
-                            complaintType: 'ROAD_DAMAGE',
-                            latitude: DEFAULT_LOCATION.latitude,
-                            longitude: DEFAULT_LOCATION.longitude,
-                            locationText: ''
-                        });
-                        setImages([]);
-                        navigation.navigate('Home');
-                    }
-                }
-            ]);
+            showToast(successMsg, 'success');
+
+            setTimeout(() => {
+                setFormData({
+                    title: '',
+                    description: '',
+                    complaintType: 'ROAD_DAMAGE',
+                    latitude: DEFAULT_LOCATION.latitude,
+                    longitude: DEFAULT_LOCATION.longitude,
+                    locationText: ''
+                });
+                setImages([]);
+                navigation.navigate('Home');
+            }, 1000);
+
         } catch (error) {
             console.error('Failed to create complaint:', error);
-            Alert.alert('Error', 'Failed to submit complaint. Please try again.');
+            const errorMsg = error.response?.data?.message || 'Failed to submit complaint. Please try again.';
+            showToast(errorMsg, 'error');
         } finally {
             setLoading(false);
         }
@@ -145,134 +183,158 @@ export default function CreateComplaintScreen({ navigation }) {
         <View style={styles.container}>
             <StatusBar style="light" />
 
+            <Toast
+                visible={toast.visible}
+                message={toast.message}
+                type={toast.type}
+                onHide={() => setToast(prev => ({ ...prev, visible: false }))}
+            />
+
             {/* Header */}
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>New Complaint</Text>
             </View>
 
-            <ScrollView style={styles.content}>
-                {/* Title */}
-                <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Title *</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Brief title of the complaint"
-                        value={formData.title}
-                        onChangeText={(text) => setFormData({ ...formData, title: text })}
-                    />
-                </View>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+            >
+                <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 40 }}>
 
-                {/* Description */}
-                <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Description *</Text>
-                    <TextInput
-                        style={[styles.input, styles.textArea]}
-                        placeholder="Detailed description of the issue"
-                        value={formData.description}
-                        onChangeText={(text) => setFormData({ ...formData, description: text })}
-                        multiline
-                        numberOfLines={4}
-                    />
-                </View>
-
-                {/* Complaint Type */}
-                <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Complaint Type *</Text>
-                    <View style={styles.pickerContainer}>
-                        <Picker
-                            selectedValue={formData.complaintType}
-                            onValueChange={(value) => setFormData({ ...formData, complaintType: value })}
-                            style={styles.picker}
-                        >
-                            {COMPLAINT_TYPES.map(type => (
-                                <Picker.Item key={type.value} label={type.label} value={type.value} />
-                            ))}
-                        </Picker>
+                    {/* 1. Title */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Title *</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Brief title of the complaint"
+                            value={formData.title}
+                            onChangeText={(text) => setFormData({ ...formData, title: text })}
+                        />
                     </View>
-                </View>
 
-                {/* Location */}
-                <View style={styles.inputGroup}>
-                    <View style={styles.labelRow}>
-                        <Text style={styles.label}>Location</Text>
-                        <TouchableOpacity onPress={getCurrentLocation} disabled={locationLoading}>
-                            <Ionicons
-                                name="locate"
-                                size={20}
-                                color={locationLoading ? COLORS.gray : COLORS.primary}
-                            />
-                        </TouchableOpacity>
+                    {/* 2. Complaint Type (Reordered to match Web) */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Complaint Type *</Text>
+                        <View style={styles.pickerContainer}>
+                            <Picker
+                                selectedValue={formData.complaintType}
+                                onValueChange={(value) => setFormData({ ...formData, complaintType: value })}
+                                style={styles.picker}
+                            >
+                                {COMPLAINT_TYPES.map(type => (
+                                    <Picker.Item key={type.value} label={type.label} value={type.value} />
+                                ))}
+                            </Picker>
+                        </View>
                     </View>
-                    <View style={styles.mapContainer}>
-                        <MapView
-                            style={styles.map}
-                            initialRegion={{
-                                latitude: formData.latitude,
-                                longitude: formData.longitude,
-                                latitudeDelta: 0.01,
-                                longitudeDelta: 0.01,
-                            }}
-                            region={{
-                                latitude: formData.latitude,
-                                longitude: formData.longitude,
-                                latitudeDelta: 0.01,
-                                longitudeDelta: 0.01,
-                            }}
-                        >
-                            <Marker
-                                coordinate={{
+
+                    {/* 3. Description (Reordered to match Web) */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Description *</Text>
+                        <TextInput
+                            style={[styles.input, styles.textArea]}
+                            placeholder="Detailed description of the issue"
+                            value={formData.description}
+                            onChangeText={(text) => setFormData({ ...formData, description: text })}
+                            multiline
+                            numberOfLines={4}
+                        />
+                    </View>
+
+                    {/* 4. Location */}
+                    <View style={styles.inputGroup}>
+                        <View style={styles.labelRow}>
+                            <Text style={styles.label}>Location</Text>
+                            <TouchableOpacity onPress={getCurrentLocation} disabled={locationLoading}>
+                                <View style={styles.locateButton}>
+                                    <Ionicons name="locate" size={16} color={COLORS.primary} />
+                                    <Text style={styles.locateText}>Use Current Location</Text>
+                                </View>
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.mapContainer}>
+                            <MapView
+                                style={styles.map}
+                                initialRegion={{
                                     latitude: formData.latitude,
                                     longitude: formData.longitude,
+                                    latitudeDelta: 0.01,
+                                    longitudeDelta: 0.01,
                                 }}
-                            />
-                        </MapView>
+                                region={{
+                                    latitude: formData.latitude,
+                                    longitude: formData.longitude,
+                                    latitudeDelta: 0.01,
+                                    longitudeDelta: 0.01,
+                                }}
+                                onPress={handleMapPress}
+                            >
+                                <Marker
+                                    coordinate={{
+                                        latitude: formData.latitude,
+                                        longitude: formData.longitude,
+                                    }}
+                                />
+                            </MapView>
+                            <View style={styles.mapOverlay}>
+                                <Text style={styles.mapOverlayText}>Tap map to update</Text>
+                            </View>
+                        </View>
+
+                        {/* Editable Address Input */}
+                        <TextInput
+                            style={[styles.input, { marginTop: 12 }]}
+                            placeholder="Address"
+                            value={formData.locationText}
+                            onChangeText={(text) => setFormData({ ...formData, locationText: text })}
+                        />
                     </View>
-                    {formData.locationText && (
-                        <Text style={styles.locationText}>{formData.locationText}</Text>
-                    )}
-                </View>
 
-                {/* Images */}
-                <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Attachments (Max 3)</Text>
-                    <TouchableOpacity style={styles.imageButton} onPress={pickImage}>
-                        <Ionicons name="camera-outline" size={24} color={COLORS.primary} />
-                        <Text style={styles.imageButtonText}>Add Photo</Text>
+                    {/* 5. Attachments */}
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Attachments (Max 3)</Text>
+
+                        <TouchableOpacity style={styles.uploadBox} onPress={pickImage}>
+                            <Ionicons name="cloud-upload-outline" size={32} color={COLORS.gray} />
+                            <Text style={styles.uploadText}>Tap to upload images</Text>
+                            <Text style={styles.uploadSubText}>Supports JPG, PNG</Text>
+                        </TouchableOpacity>
+
+                        {images.length > 0 && (
+                            <View style={styles.imageGrid}>
+                                {images.map((image, index) => (
+                                    <View key={index} style={styles.imagePreviewContainer}>
+                                        <Image source={{ uri: image.uri }} style={styles.previewImage} />
+                                        <TouchableOpacity
+                                            style={styles.removeImageButton}
+                                            onPress={() => removeImage(index)}
+                                        >
+                                            <Ionicons name="close-circle" size={24} color={COLORS.danger} />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                            </View>
+                        )}
+                    </View>
+
+                    {/* Submit Button */}
+                    <TouchableOpacity
+                        style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+                        onPress={handleSubmit}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <ActivityIndicator color={COLORS.white} />
+                        ) : (
+                            <>
+                                <Ionicons name="paper-plane-outline" size={20} color={COLORS.white} />
+                                <Text style={styles.submitButtonText}>Submit Complaint</Text>
+                            </>
+                        )}
                     </TouchableOpacity>
-
-                    {images.length > 0 && (
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageList}>
-                            {images.map((image, index) => (
-                                <View key={index} style={styles.imagePreview}>
-                                    <Image source={{ uri: image.uri }} style={styles.image} />
-                                    <TouchableOpacity
-                                        style={styles.removeButton}
-                                        onPress={() => removeImage(index)}
-                                    >
-                                        <Ionicons name="close-circle" size={24} color={COLORS.danger} />
-                                    </TouchableOpacity>
-                                </View>
-                            ))}
-                        </ScrollView>
-                    )}
-                </View>
-
-                {/* Submit Button */}
-                <TouchableOpacity
-                    style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-                    onPress={handleSubmit}
-                    disabled={loading}
-                >
-                    {loading ? (
-                        <ActivityIndicator color={COLORS.white} />
-                    ) : (
-                        <>
-                            <Ionicons name="send-outline" size={20} color={COLORS.white} />
-                            <Text style={styles.submitButtonText}>Submit Complaint</Text>
-                        </>
-                    )}
-                </TouchableOpacity>
-            </ScrollView>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </View>
     );
 }
@@ -280,18 +342,18 @@ export default function CreateComplaintScreen({ navigation }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: COLORS.lightGray,
+        backgroundColor: '#F3F4F6', // Maching Web gray-100
     },
     header: {
         backgroundColor: COLORS.primary,
         paddingTop: 50,
         paddingBottom: 20,
         paddingHorizontal: 20,
-        borderBottomLeftRadius: 24,
-        borderBottomRightRadius: 24,
+        borderBottomLeftRadius: 0, // Making it flatter like web? No, keep mobile style for header
+        borderBottomRightRadius: 0,
     },
     headerTitle: {
-        fontSize: 24,
+        fontSize: 20,
         fontWeight: 'bold',
         color: COLORS.white,
     },
@@ -305,7 +367,7 @@ const styles = StyleSheet.create({
     label: {
         fontSize: 14,
         fontWeight: '600',
-        color: COLORS.black,
+        color: '#374151', // gray-700
         marginBottom: 8,
     },
     labelRow: {
@@ -314,14 +376,24 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: 8,
     },
+    locateButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    locateText: {
+        fontSize: 12,
+        color: COLORS.primary,
+        marginLeft: 4,
+        fontWeight: '600',
+    },
     input: {
         backgroundColor: COLORS.white,
-        borderRadius: 12,
-        padding: 16,
-        fontSize: 16,
-        color: COLORS.black,
+        borderRadius: 6, // rounded-md
+        padding: 12,
+        fontSize: 14,
+        color: '#111827', // gray-900
         borderWidth: 1,
-        borderColor: COLORS.lightGray,
+        borderColor: '#D1D5DB', // gray-300
     },
     textArea: {
         height: 100,
@@ -329,84 +401,104 @@ const styles = StyleSheet.create({
     },
     pickerContainer: {
         backgroundColor: COLORS.white,
-        borderRadius: 12,
+        borderRadius: 6,
         borderWidth: 1,
-        borderColor: COLORS.lightGray,
+        borderColor: '#D1D5DB',
+        overflow: 'hidden',
     },
     picker: {
         height: 50,
     },
     mapContainer: {
         height: 200,
-        borderRadius: 12,
+        borderRadius: 6,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: COLORS.lightGray,
+        borderColor: '#D1D5DB',
+        position: 'relative',
     },
     map: {
         flex: 1,
     },
-    locationText: {
-        fontSize: 12,
-        color: COLORS.gray,
-        marginTop: 8,
+    mapOverlay: {
+        position: 'absolute',
+        bottom: 8,
+        left: 8,
+        backgroundColor: 'rgba(255,255,255,0.8)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 4,
     },
-    imageButton: {
-        flexDirection: 'row',
+    mapOverlayText: {
+        fontSize: 10,
+        color: '#4B5563',
+    },
+    uploadBox: {
+        borderWidth: 2,
+        borderColor: '#D1D5DB',
+        borderStyle: 'dashed',
+        borderRadius: 6,
+        padding: 24,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: COLORS.white,
-        borderRadius: 12,
-        padding: 16,
-        borderWidth: 2,
-        borderColor: COLORS.primary,
-        borderStyle: 'dashed',
+        marginBottom: 12,
     },
-    imageButtonText: {
-        fontSize: 16,
-        color: COLORS.primary,
-        fontWeight: '600',
-        marginLeft: 8,
+    uploadText: {
+        fontSize: 14,
+        color: '#4B5563',
+        marginTop: 8,
+        fontWeight: '500',
     },
-    imageList: {
-        marginTop: 12,
+    uploadSubText: {
+        fontSize: 12,
+        color: '#9CA3AF',
+        marginTop: 4,
     },
-    imagePreview: {
+    imageGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        marginTop: 8,
+    },
+    imagePreviewContainer: {
+        width: '31%',
+        aspectRatio: 1,
+        marginRight: '2%',
+        marginBottom: 8,
         position: 'relative',
-        marginRight: 12,
+        borderRadius: 6,
+        overflow: 'hidden',
     },
-    image: {
-        width: 100,
-        height: 100,
-        borderRadius: 12,
+    previewImage: {
+        width: '100%',
+        height: '100%',
     },
-    removeButton: {
+    removeImageButton: {
         position: 'absolute',
-        top: -8,
-        right: -8,
-        backgroundColor: COLORS.white,
+        top: 4,
+        right: 4,
+        backgroundColor: 'white',
         borderRadius: 12,
     },
     submitButton: {
         backgroundColor: COLORS.primary,
-        borderRadius: 12,
-        padding: 16,
+        borderRadius: 6,
+        padding: 14,
         flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
-        marginTop: 20,
-        marginBottom: 40,
+        marginTop: 10,
         shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+        elevation: 3,
     },
     submitButtonDisabled: {
         opacity: 0.7,
     },
     submitButtonText: {
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: '600',
         color: COLORS.white,
         marginLeft: 8,

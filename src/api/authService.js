@@ -15,4 +15,22 @@ export const authService = {
         const response = await api.post('/auth/register', userData);
         return response.data.data;
     },
+
+    // Admin (Corporator) login
+    async loginAdmin(identifier, password) {
+        const response = await api.post('/auth/admin/login', {
+            identifier,
+            password
+        });
+        return response.data.data;
+    },
+
+    // Super Admin login
+    async loginSuperAdmin(identifier, password) {
+        const response = await api.post('/auth/super-admin/login', {
+            identifier,
+            password
+        });
+        return response.data.data;
+    },
 };
